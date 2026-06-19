@@ -47,7 +47,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
 [data-testid="stSidebar"] * { color: var(--text) !important; }
 
 /* hide default streamlit chrome */
-#MainMenu, footer, header { visibility: hidden; }
+#MainMenu, footer { visibility: hidden; }
 [data-testid="stDecoration"] { display: none; }
 
 /* ── Cards ── */
