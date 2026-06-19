@@ -426,6 +426,7 @@ Your role:
         with st.spinner("Thinking..."):
             reply = ai(MENTAL_SYSTEM, "\n".join([f"{m['role']}: {m['content']}" for m in history]))
         st.session_state.mental_msgs.append({"role": "assistant", "content": reply})
+        st.session_state["mental_input"] = ""
         st.rerun()
 
     if st.button("🗑️ Clear Chat", key="clear_mental"):
@@ -485,6 +486,7 @@ elif page == "Academic Help":
         with st.spinner("Working on it..."):
             reply = ai(ACADEMIC_SYSTEM, "\n".join([f"{m['role']}: {m['content']}" for m in history]))
         st.session_state.academic_msgs.append({"role": "assistant", "content": reply})
+        st.session_state["academic_input"] = ""
         st.rerun()
 
     if st.button("🗑️ Clear Chat", key="clear_academic"):
