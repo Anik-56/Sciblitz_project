@@ -415,23 +415,37 @@ Your role:
             st.markdown(f"<div class='bubble-ai'><div class='bubble-label'>🌿 CampusZen</div>{msg['content']}</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    user_input = st.text_input("Share what's on your mind...", key="mental_input", placeholder="Type here and press Enter")
-    col1, col2 = st.columns([4,1])
-    with col2:
-        send = st.button("Send 💬", use_container_width=True)
+    prompt = st.chat_input("Share what's on your mind...")
 
-    if (user_input and send) or (user_input and st.session_state.get("_mental_enter")):
-        st.session_state.mental_msgs.append({"role": "user", "content": user_input})
-        history = [{"role": m["role"], "content": m["content"]} for m in st.session_state.mental_msgs]
+    if prompt:
+        st.session_state.mental_msgs.append({
+            "role": "user",
+            "content": prompt
+        })
+
+        history = [
+            {"role": m["role"], "content": m["content"]}
+            for m in st.session_state.mental_msgs
+        ]
+
         with st.spinner("Thinking..."):
-            reply = ai(MENTAL_SYSTEM, "\n".join([f"{m['role']}: {m['content']}" for m in history]))
-        st.session_state.mental_msgs.append({"role": "assistant", "content": reply})
-        st.session_state["mental_input"] = ""
+            reply = ai(
+                MENTAL_SYSTEM,
+                "\n".join(
+                    [f"{m['role']}: {m['content']}" for m in history]
+                )
+            )
+
+        st.session_state.mental_msgs.append({
+            "role": "assistant",
+            "content": reply
+        })
+
         st.rerun()
 
     if st.button("🗑️ Clear Chat", key="clear_mental"):
         st.session_state.mental_msgs = []
-        st.rerun()
+        st.rerun() 
 
     st.markdown("""
     <div style='margin-top:1rem;padding:.8rem 1rem;background:rgba(248,113,113,.07);border:1px solid rgba(248,113,113,.2);border-radius:10px;font-size:.8rem;color:#8b949e'>
@@ -475,18 +489,29 @@ elif page == "Academic Help":
             st.markdown(f"<div class='bubble-ai'><div class='bubble-label'>📚 Tutor</div>{msg['content']}</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    user_input = st.text_input("Ask your academic question...", key="academic_input", placeholder="e.g. Explain Newton's second law with examples")
-    col1, col2 = st.columns([4,1])
-    with col2:
-        send = st.button("Ask 🎓", use_container_width=True)
+    prompt = st.chat_input("Ask your academic question...")
 
-    if user_input and send:
-        st.session_state.academic_msgs.append({"role": "user", "content": user_input})
+    if prompt:
+        st.session_state.academic_msgs.append({
+            "role": "user",
+            "content": prompt
+        })
+
         history = st.session_state.academic_msgs
+
         with st.spinner("Working on it..."):
-            reply = ai(ACADEMIC_SYSTEM, "\n".join([f"{m['role']}: {m['content']}" for m in history]))
-        st.session_state.academic_msgs.append({"role": "assistant", "content": reply})
-        st.session_state["academic_input"] = ""
+            reply = ai(
+                ACADEMIC_SYSTEM,
+                "\n".join(
+                    [f"{m['role']}: {m['content']}" for m in history]
+                )
+            )
+
+        st.session_state.academic_msgs.append({
+            "role": "assistant",
+            "content": reply
+        })
+
         st.rerun()
 
     if st.button("🗑️ Clear Chat", key="clear_academic"):
@@ -642,7 +667,7 @@ Include:
 - One rest day
 - Motivational tip at the end
 
-Be specific and realistic based on hours available."""
+Be specific and realistic based on hours available and dont be blind about the day count. keep day counts in mind then give a proper plan"""
 
             with st.spinner("Creating your personalised plan..."):
                 plan = ai(PLAN_SYSTEM, f"Create study plan for: {subjects}")
