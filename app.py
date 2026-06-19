@@ -1,26 +1,34 @@
-# app.py (minimal)
+# app.py
 import streamlit as st
-from llama_cpp import Llama
+from groq import Groq
 
-MODEL_PATH = "E:\models\llama-2-7b.Q4_K_M.gguf"  # <-- set your model file here
+client = Groq(api_key="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")
 
-@st.cache_resource
-def load_model():
-    return Llama(model_path=MODEL_PATH)
+st.title("Sciblitz 🔬")
+st.caption("Powered by LLaMA 3.3 70B — Free & Fast")
 
-llm = Llama(
-    model_path=MODEL_PATH,
-    n_threads=12,       # match your CPU cores
-    n_ctx=2048,         # context window size
-    verbose=True
-)
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-st.title("Sciblitz — Simple Chat")
-prompt = st.text_input("Ask something:")
+# Show chat history
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.write(msg["content"])
 
-if prompt:
-    try:
-        out = llm(prompt, max_tokens=150)
-        st.write(out["choices"][0]["text"])
-    except Exception as e:
-        st.error(f"Model error: {e}")
+# Input
+if prompt := st.chat_input("Ask something..."):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.write(prompt)
+
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking..."):
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",  # free & very smart
+                messages=st.session_state.messages,
+                max_tokens=1024,
+            )
+            reply = response.choices[0].message.content
+            st.write(reply)
+
+    st.session_state.messages.append({"role": "assistant", "content": reply})
