@@ -655,7 +655,7 @@ Create a detailed weekly study schedule based on:
 - Goal: {goal}
 - Weak areas: {weak}
 
-Format the plan as a clear day-by-day schedule for 7 days.
+Format the plan as a clear day-by-day schedule according deadline.
 Use this structure:
 **DAY 1 - [Day Name]**
 - [Time slot]: [Subject] - [Specific topic/task] [Priority: HIGH/MED/LOW]
