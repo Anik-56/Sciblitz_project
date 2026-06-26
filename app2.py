@@ -1,12 +1,12 @@
 import streamlit as st
 from groq import Groq
-from google import genai
-from google.genai import types as genai_types
 import json
 import re
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
+import random
 from streamlit_mic_recorder import mic_recorder
+import plotly.graph_objects as go
 
 # ── Page config ──────────────────────────────────────────────
 st.set_page_config(
@@ -32,6 +32,8 @@ st.markdown("""
     --text:      #e6edf3;
     --muted:     #8b949e;
     --radius:    14px;
+    --calm-accent: #60a5fa;
+    --calm-surface: #0f1f35;
 }
 
 html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
@@ -102,6 +104,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
     margin-bottom:.6rem;
 }
 
+/* ── Normal chat bubbles ── */
 .bubble-user {
     background: rgba(124,106,247,.15);
     border: 1px solid rgba(124,106,247,.3);
@@ -121,6 +124,28 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
     font-size:.92rem;
     line-height:1.6;
 }
+
+/* ── Calm mode chat bubbles (crisis detected) ── */
+.bubble-user-calm {
+    background: rgba(96,165,250,.12);
+    border: 1px solid rgba(96,165,250,.25);
+    border-radius: 14px 14px 4px 14px;
+    padding: .75rem 1rem;
+    margin: .5rem 0 .5rem 20%;
+    color: var(--text);
+    font-size:.92rem;
+}
+.bubble-ai-calm {
+    background: #0f1f35;
+    border: 1px solid rgba(96,165,250,.2);
+    border-radius: 14px 14px 14px 4px;
+    padding: .75rem 1rem;
+    margin: .5rem 20% .5rem 0;
+    color: #c9dff7;
+    font-size:.92rem;
+    line-height:1.6;
+}
+
 .bubble-label { font-size:.7rem; color:var(--muted); margin-bottom:.2rem; }
 
 [data-testid="stTextInput"] input,
@@ -195,63 +220,6 @@ button[kind="primary"]:hover, [data-testid="stButton"] > button:hover {
 .badge-med  { background:rgba(240,165,0,.15);   color:#f0a500; }
 .badge-low  { background:rgba(86,207,178,.15);  color:var(--accent2); }
 
-.voice-box {
-    background: var(--surface2);
-    border: 1px dashed var(--border);
-    border-radius: var(--radius);
-    padding: 1.2rem 1.4rem;
-    margin-bottom: 1rem;
-    text-align: center;
-}
-@keyframes pulse {
-    0%,100% { box-shadow: 0 0 0 0 rgba(248,113,113,.3); }
-    50%      { box-shadow: 0 0 0 8px rgba(248,113,113,.0); }
-}
-.voice-transcript {
-    background: rgba(124,106,247,.08);
-    border: 1px solid rgba(124,106,247,.25);
-    border-radius: 10px;
-    padding: .7rem 1rem;
-    font-size:.9rem;
-    color: var(--text);
-    margin-top: .6rem;
-    text-align: left;
-    min-height: 2.4rem;
-}
-
-.pdf-zone {
-    background: var(--surface2);
-    border: 1px dashed var(--border);
-    border-radius: var(--radius);
-    padding: 1.4rem;
-    margin-bottom: 1rem;
-    transition: border-color .2s;
-}
-.pdf-zone:hover { border-color: var(--accent2); }
-.pdf-info {
-    display:flex; align-items:center; gap:.8rem;
-    background: rgba(86,207,178,.07);
-    border: 1px solid rgba(86,207,178,.25);
-    border-radius: 10px;
-    padding: .7rem 1rem;
-    font-size:.88rem;
-    margin-top:.6rem;
-}
-.pdf-icon { font-size:1.4rem; }
-
-[data-testid="stTabs"] button {
-    background: transparent !important;
-    color: var(--muted) !important;
-    border: none !important;
-    border-bottom: 2px solid transparent !important;
-    border-radius: 0 !important;
-    font-weight: 500 !important;
-}
-[data-testid="stTabs"] button[aria-selected="true"] {
-    color: var(--accent) !important;
-    border-bottom-color: var(--accent) !important;
-}
-
 .feature-badge {
     display:inline-flex; align-items:center; gap:.3rem;
     background: rgba(86,207,178,.1);
@@ -261,119 +229,223 @@ button[kind="primary"]:hover, [data-testid="stButton"] > button:hover {
     font-size:.72rem; font-weight:600;
     margin-left:.5rem;
 }
+
+/* ── SOS / Crisis side panel ── */
+.crisis-panel {
+    background: linear-gradient(160deg, #0f1f35 0%, #0d1117 100%);
+    border: 1px solid rgba(96,165,250,.3);
+    border-radius: var(--radius);
+    padding: 1.2rem 1.4rem;
+    margin-bottom: 1rem;
+    animation: fadeSlideIn .4s ease;
+}
+@keyframes fadeSlideIn {
+    from { opacity:0; transform: translateX(12px); }
+    to   { opacity:1; transform: translateX(0); }
+}
+.crisis-panel h4 {
+    font-family:'Sora',sans-serif;
+    color: #60a5fa;
+    font-size:.95rem;
+    margin:0 0 .5rem;
+}
+.crisis-panel p {
+    font-size:.82rem;
+    color:#94b8d8;
+    margin:.3rem 0;
+    line-height:1.5;
+}
+.helpline-item {
+    background: rgba(96,165,250,.07);
+    border: 1px solid rgba(96,165,250,.18);
+    border-radius: 8px;
+    padding: .45rem .7rem;
+    font-size:.8rem;
+    color: #c9dff7;
+    margin: .35rem 0;
+}
+
+/* ── Breathing circle ── */
+.breath-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: .8rem 0 .5rem;
+}
+.breath-circle {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(96,165,250,.5) 0%, rgba(96,165,250,.1) 70%);
+    border: 2px solid rgba(96,165,250,.5);
+    animation: breathe 8s ease-in-out infinite;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .72rem;
+    color: #60a5fa;
+    font-weight: 600;
+    text-align: center;
+    letter-spacing: .02em;
+}
+@keyframes breathe {
+    0%,100% { transform: scale(1);   opacity: .7; box-shadow: 0 0 0 0 rgba(96,165,250,.2); }
+    40%      { transform: scale(1.5); opacity: 1;  box-shadow: 0 0 0 16px rgba(96,165,250,.0); }
+    60%      { transform: scale(1.5); opacity: 1; }
+}
+.breath-label {
+    margin-top:.6rem;
+    font-size:.75rem;
+    color:#60a5fa;
+    font-weight:500;
+    letter-spacing:.04em;
+}
+            
+/* ── SOS Modal ── */
+.sos-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.72);
+    z-index: 9998;
+    backdrop-filter: blur(4px);
+}
+.sos-modal {
+    position: fixed; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 9999;
+    width: min(480px, 92vw);
+    background: linear-gradient(160deg, #0d1e35 0%, #0d1117 100%);
+    border: 1px solid rgba(96,165,250,.35);
+    border-radius: 20px;
+    padding: 2rem 2rem 1.6rem;
+    animation: modalIn .35s cubic-bezier(.22,1,.36,1);
+    box-shadow: 0 24px 80px rgba(0,0,0,.7);
+}
+.sos-close {
+    position: absolute; top: 1rem; right: 1rem;
+    width: 28px; height: 28px;
+    background: rgba(255,255,255,.07);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    font-size: .85rem; color: #8b949e;
+    transition: background .2s;
+}
+.sos-close:hover { background: rgba(255,255,255,.14); color: #e6edf3; }
+@keyframes modalIn {
+    from { opacity:0; transform: translate(-50%, -46%) scale(.96); }
+    to   { opacity:1; transform: translate(-50%, -50%) scale(1); }
+}
+.sos-title {
+    font-family: 'Sora', sans-serif;
+    font-size: 1.25rem; font-weight: 700;
+    color: #c9dff7; margin: 0 0 .5rem;
+}
+.sos-body {
+    font-size: .9rem; color: #94b8d8;
+    line-height: 1.65; margin-bottom: 1.1rem;
+}
+.sos-divider {
+    border: none;
+    border-top: 1px solid rgba(96,165,250,.12);
+    margin: 1rem 0;
+}
+.sos-section-label {
+    font-size: .7rem; font-weight: 700;
+    color: #60a5fa; text-transform: uppercase;
+    letter-spacing: .08em; margin-bottom: .5rem;
+}
+.sos-helpline {
+    background: rgba(96,165,250,.07);
+    border: 1px solid rgba(96,165,250,.16);
+    border-radius: 9px; padding: .45rem .8rem;
+    font-size: .8rem; color: #c9dff7;
+    margin-bottom: .35rem;
+    display: flex; justify-content: space-between; align-items: center;
+}
+.sos-helpline b { color: #93c5fd; }
+.breath-mini {
+    display: flex; align-items: center; gap: .9rem;
+    background: rgba(96,165,250,.06);
+    border: 1px solid rgba(96,165,250,.14);
+    border-radius: 10px; padding: .6rem .9rem;
+    margin-bottom: .8rem;
+}
+.breath-dot {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(96,165,250,.5) 0%, rgba(96,165,250,.05) 80%);
+    border: 1.5px solid rgba(96,165,250,.5);
+    flex-shrink: 0;
+    animation: breathe 8s ease-in-out infinite;
+}
+.breath-mini-text { font-size: .8rem; color: #93c5fd; line-height: 1.5; }
+            
+/* ── Normal side panel (non-crisis) ── */
+.side-tip-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.2rem;
+    margin-bottom: .8rem;
+}
+.side-tip-card .tip-label {
+    font-size:.7rem;
+    color: var(--muted);
+    font-weight:600;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    margin-bottom:.4rem;
+}
+.side-tip-card p {
+    font-size:.83rem;
+    color: var(--text);
+    line-height:1.5;
+    margin:0;
+}
+
+/* ── Mental support zone on dashboard ── */
+.mental-zone {
+    background: linear-gradient(135deg, #0f1a2e 0%, #111827 100%);
+    border: 1px solid rgba(96,165,250,.2);
+    border-radius: var(--radius);
+    padding: 1.4rem 1.6rem;
+    margin-bottom: 1rem;
+}
+.mental-zone .zone-head {
+    font-family:'Sora',sans-serif;
+    font-size:1rem;
+    font-weight:700;
+    color:#60a5fa;
+    margin:0 0 .9rem;
+    display:flex; align-items:center; gap:.5rem;
+}
+.mental-feature-row {
+    display:flex; gap:.7rem; flex-wrap:wrap; margin-bottom:.9rem;
+}
+.mental-feature-chip {
+    background: rgba(96,165,250,.08);
+    border: 1px solid rgba(96,165,250,.2);
+    border-radius: 8px;
+    padding: .45rem .85rem;
+    font-size:.8rem;
+    color: #93c5fd;
+    font-weight:500;
+    cursor:pointer;
+    transition: background .2s;
+}
+.mental-feature-chip:hover { background: rgba(96,165,250,.15); }
+
+/* ── Mood chart container ── */
+.mood-chart-wrap {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: .8rem;
+    margin-bottom:.8rem;
+}
 </style>
 """, unsafe_allow_html=True)
 
-# ── Voice component (Web Speech API — used on Academic Help page) ──
-VOICE_COMPONENT = """
-<div id="voice-container">
-  <button id="voiceBtn" onclick="toggleVoice()" style="
-      background: #7c6af7; color:#fff; border:none; border-radius:10px;
-      padding:.55rem 1.1rem; font-size:.88rem; font-weight:600; cursor:pointer;
-      display:flex; align-items:center; gap:.5rem; transition: all .2s;
-  ">
-    <span id="voiceIcon">🎤</span>
-    <span id="voiceLabel">Start Voice Input</span>
-  </button>
-
-  <div id="transcript-box" style="
-      display:none; margin-top:.6rem;
-      background: rgba(124,106,247,.08);
-      border: 1px solid rgba(124,106,247,.25);
-      border-radius: 10px; padding: .7rem 1rem;
-      font-size:.9rem; color:#e6edf3; min-height:2.4rem;
-      font-family: Inter, sans-serif;
-  ">
-    <span id="transcript-text" style="color:#8b949e">Listening… speak now</span>
-  </div>
-
-  <div id="copy-row" style="display:none; margin-top:.5rem; gap:.5rem; align-items:center">
-    <button onclick="copyTranscript()" style="
-        background:#1c2330; color:#e6edf3; border:1px solid #30363d;
-        border-radius:8px; padding:.4rem .9rem; font-size:.82rem; cursor:pointer;
-    ">📋 Copy to clipboard</button>
-    <span id="copy-msg" style="color:#56cfb2;font-size:.8rem;display:none">Copied!</span>
-  </div>
-
-  <div id="no-support" style="display:none; color:#f87171; font-size:.82rem; margin-top:.4rem;">
-    ⚠️ Voice input requires Chrome or Edge browser.
-  </div>
-</div>
-
-<script>
-let recognition = null;
-let isListening = false;
-let finalText = "";
-
-function toggleVoice() {
-  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-    document.getElementById('no-support').style.display = 'block';
-    return;
-  }
-  isListening ? stopVoice() : startVoice();
-}
-
-function startVoice() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  recognition = new SpeechRecognition();
-  recognition.continuous = true;
-  recognition.interimResults = true;
-  recognition.lang = 'en-US';
-  finalText = "";
-
-  recognition.onstart = () => {
-    isListening = true;
-    document.getElementById('voiceBtn').style.background = '#f87171';
-    document.getElementById('voiceIcon').textContent = '⏹';
-    document.getElementById('voiceLabel').textContent = 'Stop Recording';
-    document.getElementById('transcript-box').style.display = 'block';
-    document.getElementById('copy-row').style.display = 'none';
-    document.getElementById('transcript-text').style.color = '#8b949e';
-    document.getElementById('transcript-text').textContent = 'Listening… speak now';
-  };
-
-  recognition.onresult = (e) => {
-    let interim = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      if (e.results[i].isFinal) finalText += e.results[i][0].transcript + ' ';
-      else interim += e.results[i][0].transcript;
-    }
-    const display = (finalText + interim).trim();
-    document.getElementById('transcript-text').textContent = display || 'Listening…';
-    document.getElementById('transcript-text').style.color = '#e6edf3';
-  };
-
-  recognition.onerror = (e) => {
-    document.getElementById('transcript-text').textContent = 'Error: ' + e.error;
-    document.getElementById('transcript-text').style.color = '#f87171';
-    stopVoice();
-  };
-
-  recognition.onend = () => { if (isListening) stopVoice(); };
-  recognition.start();
-}
-
-function stopVoice() {
-  isListening = false;
-  if (recognition) recognition.stop();
-  document.getElementById('voiceBtn').style.background = '#7c6af7';
-  document.getElementById('voiceIcon').textContent = '🎤';
-  document.getElementById('voiceLabel').textContent = 'Start Voice Input';
-  if (finalText.trim()) {
-    document.getElementById('copy-row').style.display = 'flex';
-  }
-}
-
-function copyTranscript() {
-  const text = finalText.trim() || document.getElementById('transcript-text').textContent;
-  navigator.clipboard.writeText(text).then(() => {
-    const msg = document.getElementById('copy-msg');
-    msg.style.display = 'inline';
-    setTimeout(() => msg.style.display = 'none', 2000);
-  });
-}
-</script>
-"""
 
 # ── PDF text extractor ────────────────────────────────────────
 def extract_pdf_text(uploaded_file) -> str:
@@ -393,28 +465,179 @@ def extract_pdf_text(uploaded_file) -> str:
         return f"__ERROR__: {e}"
 
 
-def extract_image_text_via_gemini(uploaded_file) -> str:
+def extract_image_text(uploaded_file) -> str:
     try:
         img_bytes = uploaded_file.read()
         b64 = base64.b64encode(img_bytes).decode()
-        mime = uploaded_file.type or "image/jpeg"
-        gclient = genai.Client(api_key=st.secrets["GOOGLE_API_KEY"])
-        response = gclient.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=[
-                {
-                    "role": "user",
-                    "parts": [
-                        {"inline_data": {"mime_type": mime, "data": b64}},
-                        {"text": "Extract all text from this image of notes. Return only the raw text content, preserving structure. Do not add any commentary."}
-                    ]
-                }
-            ]
+        mime = uploaded_file.type if uploaded_file.type else "image/jpeg"
+        
+        client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+        resp = client.chat.completions.create(
+            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
+                    {"type": "text", "text": "Extract all text from this image of notes. Return only the raw text content, preserving structure. Do not add any commentary."}
+                ]
+            }],
+            max_tokens=2048
         )
-        return response.text
+        return resp.choices[0].message.content
     except Exception as e:
         return f"__ERROR__: {e}"
 
+
+# ── Crisis detection ──────────────────────────────────────────
+def detect_crisis(text: str) -> bool:
+    """Use AI to assess whether a message signals emotional crisis."""
+    system = """You are a mental health triage assistant. 
+You are a mental health safety classifier.
+
+Your ONLY task is to determine whether a student's message indicates an immediate or potentially serious emotional or psychological crisis.
+Respond with ONLY one word:
+YES or NO
+
+Return **YES** if the message expresses or strongly implies any of the following:
+
+* Suicidal thoughts, wishes to die, or wanting to end their life.
+* Thoughts, urges, or plans of self-harm.
+* Feeling that others would be better off without them.
+* Feeling trapped with no way out.
+* Extreme hopelessness or believing life has no meaning.
+* Wanting to disappear, not wake up, or stop existing.
+* Severe emotional breakdown, panic, or inability to stay safe.
+* Statements indicating they may harm themselves, even indirectly.
+* Any wording that reasonably suggests an imminent mental health crisis, even if not stated explicitly.
+
+Return **NO** if the message is primarily about:
+
+* Exam stress or academic pressure.
+* Anxiety about grades, deadlines, or presentations.
+* Feeling tired, overwhelmed, lonely, frustrated, or sad without crisis indicators.
+* Relationship problems, homesickness, or everyday emotional struggles.
+* Requests for advice, motivation, study help, or emotional support that do not suggest immediate danger.
+
+When uncertain, prioritize safety. If the message contains credible signs of a crisis, respond YES.
+
+Output exactly one word:
+
+YES or NO"""
+
+
+    try:
+        client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+        resp = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": text}
+            ],
+            max_tokens=5,
+            temperature=0.0,   # deterministic
+        )
+        answer = resp.choices[0].message.content.strip().upper()
+        return answer.startswith("YES")
+    except Exception:
+        return False   # fail safe: don't trigger on API error
+
+
+# ── Mood helpers ──────────────────────────────────────────────
+MOOD_SCALE = {
+    "😊 Great": 5,
+    "😐 Okay": 3,
+    "😔 Low": 2,
+    "😰 Stressed": 1,
+    "😤 Frustrated": 2,
+}
+
+def _seed_demo_mood_log():
+    """Seed 7 days of demo mood data so chart is never empty in a demo."""
+    sample_moods = ["😊 Great", "😐 Okay", "😔 Low", "😰 Stressed", "😤 Frustrated"]
+    weights      = [0.25, 0.30, 0.15, 0.20, 0.10]
+    log = []
+    for i in range(7, 0, -1):
+        day = datetime.now() - timedelta(days=i)
+        mood = random.choices(sample_moods, weights=weights)[0]
+        log.append({
+            "mood": mood,
+            "time": day.strftime("%H:%M"),
+            "date": day.strftime("%b %d"),
+            "datetime": day.isoformat(),
+        })
+    return log
+
+def build_mood_chart(mood_log: list) -> go.Figure:
+    if not mood_log:
+        return None
+
+    color_map = {5: "#56cfb2", 3: "#7c6af7", 2: "#f0a500", 1: "#f87171"}
+    emoji_map = {"😊 Great": "😊", "😐 Okay": "😐", "😔 Low": "😔", "😰 Stressed": "😰", "😤 Frustrated": "😤"}
+
+    entries = mood_log[-30:]  # last 30 entries regardless of day
+    labels, scores, colors, hovers = [], [], [], []
+
+    for entry in entries:
+        score = MOOD_SCALE.get(entry["mood"], 3)
+        # X axis label: show time if same day, else "Jun 27 14:32"
+        if entry.get("datetime"):
+            dt = datetime.fromisoformat(entry["datetime"])
+            label = dt.strftime("%b %d %H:%M")
+        else:
+            label = f"{entry.get('date','')} {entry.get('time','')}"
+        labels.append(label)
+        scores.append(score)
+        colors.append(color_map.get(score, "#7c6af7"))
+        hovers.append(f"{entry['mood']}<br>{label}")
+
+    fig = go.Figure()
+
+    # Filled area
+    fig.add_trace(go.Scatter(
+        x=labels, y=scores,
+        mode="lines+markers",
+        line=dict(color="#60a5fa", width=2, shape="spline"),
+        marker=dict(color=colors, size=9, line=dict(color="#0d1117", width=2)),
+        fill="tozeroy",
+        fillcolor="rgba(96,165,250,0.06)",
+        hovertemplate="%{customdata}<extra></extra>",
+        customdata=hovers,
+    ))
+
+    # Highlight last point
+    fig.add_trace(go.Scatter(
+        x=[labels[-1]], y=[scores[-1]],
+        mode="markers",
+        marker=dict(color=colors[-1], size=14, line=dict(color="#fff", width=2)),
+        hoverinfo="skip",
+        showlegend=False,
+    ))
+
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=10, r=10, t=10, b=40),
+        height=180,
+        xaxis=dict(
+            showgrid=False, zeroline=False,
+            tickfont=dict(color="#8b949e", size=9),
+            showline=False,
+            tickangle=-35,
+            # Only show max 6 ticks to avoid crowding
+            nticks=6,
+        ),
+        yaxis=dict(
+            showgrid=True, gridcolor="rgba(255,255,255,0.05)",
+            zeroline=False, range=[0.5, 5.5],
+            tickfont=dict(color="#8b949e", size=9),
+            showline=False,
+            tickvals=[1, 2, 3, 5],
+            ticktext=["😰", "😔", "😐", "😊"],
+        ),
+        showlegend=False,
+        hovermode="x unified",
+    )
+    return fig
 
 # ── Session state ────────────────────────────────────────────
 def init_state():
@@ -433,10 +656,16 @@ def init_state():
         "pdf_files": {},
         "pdf_active": [],
         # Mental Health chat input state
-        "mental_input_counter": 0,   # bumped on send to reset the text box
-        "mental_voice_id": None,     # tracks last processed voice clip
+        "mental_input_counter": 0,
+        "mental_voice_id": None,
         "academic_input_counter": 0,
         "academic_voice_id": None,
+        # NEW — mental health enhancements
+        "crisis_detected": False,
+        "chat_theme": "normal",       # "normal" | "calm"
+        "breathing_active": False,
+        "demo_mood_seeded": False,    # ensures we only seed once
+        "sos_popup_dismissed": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -444,28 +673,27 @@ def init_state():
 
 init_state()
 
+# Seed demo mood data once per session so chart always looks populated
+if not st.session_state.demo_mood_seeded and not st.session_state.mood_log:
+    st.session_state.mood_log = _seed_demo_mood_log()
+    st.session_state.demo_mood_seeded = True
+
 
 # ── AI helper ────────────────────────────────────────────────
 def ai(system_prompt, user_prompt, max_tokens=1024):
-    messages = [{"role": "user", "content": user_prompt}]
     try:
         client = Groq(api_key=st.secrets["GROQ_API_KEY"])
         resp = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
-            messages=[{"role": "system", "content": system_prompt}] + messages,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
             max_tokens=max_tokens,
         )
         return resp.choices[0].message.content
-    except Exception:
-        try:
-            gclient = genai.Client(api_key=st.secrets["GOOGLE_API_KEY"])
-            response = gclient.models.generate_content(
-                model="gemma-3-27b-it",
-                contents=system_prompt + "\n\n" + user_prompt,
-            )
-            return response.text
-        except Exception as e:
-            return f"⚠️ Both AI services unavailable: {e}"
+    except Exception as e:
+        return f"⚠️ AI service unavailable: {e}"
 
 
 # ── Whisper transcription ────────────────────────────────────
@@ -481,8 +709,8 @@ def transcribe_audio(audio) -> str | None:
         st.error(f"Transcription failed: {e}")
         return None
 
+
 def get_active_pdf_text() -> str:
-    """Return concatenated text of only the user-selected files."""
     if not st.session_state.pdf_active:
         return ""
     parts = []
@@ -491,10 +719,48 @@ def get_active_pdf_text() -> str:
         parts.append(f"--- FILE: {name} ---\n{text}")
     return "\n\n".join(parts)
 
+
+# ── Mental system prompt — switches tone in calm mode ────────
+def get_mental_system(calm: bool = False) -> str:
+    base = """You are CampusZen's compassionate mental health companion for university students.
+Your role:
+- Listen empathetically and validate feelings first before giving advice
+- Help with stress, anxiety, academic pressure, loneliness, burnout, relationships
+- Use warm, non-clinical language appropriate for a college student
+- Offer practical coping strategies when appropriate
+- Never diagnose. Never be dismissive. Always be kind.
+"""
+    if calm:
+        base += """
+RIGHT NOW, this student is in pain — possibly in crisis. This is the most important moment in the conversation.
+
+Your entire approach shifts:
+- DO NOT give advice, tips, or bullet points
+- DO NOT ask multiple questions
+- DO NOT minimize or rush past what they said
+- First: acknowledge their pain directly. Use their words back to them. Make them feel truly heard.
+- Then: say one thing that reminds them they are not alone — not a cliché, something human
+- Then: offer one tiny, immediate anchor (e.g. "Can you take one slow breath with me right now?")
+- End by gently opening the door: ask ONE simple question, like "Can you tell me a little more about what's been happening?"
+- Your tone is: quiet, unhurried, present. Like a friend sitting beside them in a dark room.
+- Never mention helplines yourself — the app has already shown them. Just be here.
+"""
+    return base
+
+
 # ── Shared mental-health send logic ─────────────────────────
-def _mental_send(user_message: str, system_prompt: str):
-    """Append user msg → call AI → append reply. Call then st.rerun()."""
+def _mental_send(user_message: str):
+    """Append user msg → detect crisis → call AI → append reply."""
     st.session_state.mental_msgs.append({"role": "user", "content": user_message})
+
+    # Crisis detection — runs on every user message
+    if detect_crisis(user_message):
+        st.session_state.crisis_detected = True
+        st.session_state.chat_theme = "calm"
+
+    calm = st.session_state.chat_theme == "calm"
+    system_prompt = get_mental_system(calm=calm)
+
     history_str = "\n".join(
         f"{m['role']}: {m['content']}" for m in st.session_state.mental_msgs
     )
@@ -543,7 +809,7 @@ with st.sidebar:
     )
 
     if sidebar_file:
-        for f in sidebar_file: 
+        for f in sidebar_file:
             if not hasattr(f, 'name'):
                 continue
             if f.name not in st.session_state.pdf_files:
@@ -551,7 +817,7 @@ with st.sidebar:
                     if f.type == "application/pdf":
                         extracted = extract_pdf_text(f)
                     else:
-                        extracted = extract_image_text_via_gemini(f)
+                        extracted = extract_image_text(f)
 
                     if extracted.startswith("__PYMUPDF_MISSING__"):
                         st.error("PyMuPDF not installed.")
@@ -587,8 +853,6 @@ with st.sidebar:
             st.session_state.pdf_files = {}
             st.session_state.pdf_active = []
             st.rerun()
-    
-
 
     st.markdown("---")
     st.markdown(
@@ -598,15 +862,32 @@ with st.sidebar:
 
 page = st.session_state.page
 
+
 # ══════════════════════════════════════════════════════════════
 # PAGE: DASHBOARD
 # ══════════════════════════════════════════════════════════════
 if page == "Dashboard":
-    st.markdown("""
+
+    # Determine time of day for greeting
+    hour = datetime.now().hour
+    if hour < 12:
+        greeting = "Good morning 🌤️"
+        sub = "Start your day with intention. What's on the agenda?"
+    elif hour < 17:
+        greeting = "Good afternoon ☀️"
+        sub = "Hope your study session is going well. How are you holding up?"
+    elif hour < 21:
+        greeting = "Good evening 🌙"
+        sub = "Wrapping up the day? Remember to rest — you've earned it."
+    else:
+        greeting = "Still up? 🌌"
+        sub = "It's late. Your wellbeing matters more than one more chapter."
+
+    st.markdown(f"""
     <div class='hero'>
         <div class='pill'>✦ AI-Powered Campus Companion</div>
-        <h1>Good to see you 👋</h1>
-        <p>Your mental health & academic assistant — available 24/7, completely free.</p>
+        <h1>{greeting}</h1>
+        <p>{sub}</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -622,29 +903,77 @@ if page == "Dashboard":
     </div>
     """, unsafe_allow_html=True)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("<div class='zen-card'><div class='section-head'>💚 Quick Mood Check</div>", unsafe_allow_html=True)
-        st.markdown("How are you feeling right now?")
-        moods = ["😊 Great", "😐 Okay", "😔 Low", "😰 Stressed", "😤 Frustrated"]
-        cols = st.columns(len(moods))
-        for i, mood in enumerate(moods):
-            with cols[i]:
-                if st.button(mood, key=f"mood_{i}"):
-                    st.session_state.mood_today = mood
-                    st.session_state.mood_log.append({"mood": mood, "time": datetime.now().strftime("%H:%M")})
-                    st.rerun()
-        if st.session_state.mood_today:
-            st.success(f"Logged: {st.session_state.mood_today}")
-        st.markdown("</div>", unsafe_allow_html=True)
+    # ── Mental Support Zone ───────────────────────────────────
+    st.markdown("""
+    <div class='mental-zone'>
+        <div class='zone-head'>💙 Mental Support Center</div>
+    """, unsafe_allow_html=True)
 
-    with col2:
-        st.markdown("<div class='zen-card'><div class='section-head'>🚀 Quick Actions</div>", unsafe_allow_html=True)
+    mz_col1, mz_col2 = st.columns([1.1, 1])
+
+    with mz_col1:
+        st.markdown("<div style='font-size:.78rem;color:#8b949e;font-weight:600;margin-bottom:.5rem;text-transform:uppercase;letter-spacing:.05em'>Your Mood This Week</div>", unsafe_allow_html=True)
+
+        fig = build_mood_chart(st.session_state.mood_log)
+        if fig:
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.markdown("<p style='color:#8b949e;font-size:.85rem'>Log your first mood to see your trend.</p>", unsafe_allow_html=True)
+
+        # Mood streak
+        streak = len([e for e in st.session_state.mood_log if e.get("date")])
+        if streak > 0:
+            st.markdown(f"<p style='font-size:.78rem;color:#60a5fa;margin-top:-.3rem'>🔥 {streak}-day mood streak — keep it up!</p>", unsafe_allow_html=True)
+
+    with mz_col2:
+        st.markdown("<div style='font-size:.78rem;color:#8b949e;font-weight:600;margin-bottom:.5rem;text-transform:uppercase;letter-spacing:.05em'>How Are You Feeling?</div>", unsafe_allow_html=True)
+
+        moods = ["😊 Great", "😐 Okay", "😔 Low", "😰 Stressed", "😤 Frustrated"]
+        mood_cols = st.columns(len(moods))
+        for i, mood in enumerate(moods):
+            with mood_cols[i]:
+                if st.button(mood.split()[0], key=f"dash_mood_{i}", help=mood):
+                    st.session_state.mood_today = mood
+                    now = datetime.now()
+                    st.session_state.mood_log.append({
+                        "mood": mood,
+                        "time": now.strftime("%H:%M"),
+                        "date": now.strftime("%b %d"),
+                        "datetime": now.isoformat(),
+                    })
+                    st.rerun()
+
+        if st.session_state.mood_today:
+            score = MOOD_SCALE.get(st.session_state.mood_today, 3)
+            if score <= 2:
+                mood_msg = "It's okay to not be okay. The chat is here for you. 💙"
+                mood_color = "#60a5fa"
+            elif score == 3:
+                mood_msg = "Staying steady — that counts. 💚"
+                mood_color = "#56cfb2"
+            else:
+                mood_msg = "Glad you're doing well! Keep that energy. ✨"
+                mood_color = "#7c6af7"
+            st.markdown(f"<p style='font-size:.82rem;color:{mood_color};margin-top:.4rem'>{mood_msg}</p>", unsafe_allow_html=True)
+
+        st.markdown("<div style='margin-top:.7rem;font-size:.78rem;color:#8b949e;font-weight:600;margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.05em'>Mental Health Tools</div>", unsafe_allow_html=True)
+
+        if st.button("Open Mental Health Chat 💚", key="dash_mental_cta", use_container_width=True):
+            st.session_state.page = "Mental Health"
+            st.rerun()
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── Academic Quick Actions ────────────────────────────────
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("<div class='zen-card'><div class='section-head'>🚀 Academic Tools</div>", unsafe_allow_html=True)
         qa = [
-            ("💬 Talk to AI Counselor", "Mental Health"),
             ("📚 Ask Academic Question", "Academic Help"),
             ("🧩 Take a Quiz", "Quiz Generator"),
             ("📅 Plan My Week", "Study Planner"),
+            ("📝 Summarize Notes", "Note Summarizer"),
         ]
         for label, target in qa:
             if st.button(label, key=f"qa_{target}", use_container_width=True):
@@ -652,28 +981,24 @@ if page == "Dashboard":
                 st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("""
-    <div class='zen-card'>
-        <div class='section-head'>✨ What's New</div>
-        <div style='display:flex;gap:1rem;flex-wrap:wrap'>
-            <div style='flex:1;min-width:200px;background:rgba(124,106,247,.07);border:1px solid rgba(124,106,247,.2);border-radius:10px;padding:.9rem 1rem'>
-                <div style='font-size:1.3rem'>🎤</div>
-                <div style='font-weight:600;margin:.3rem 0 .2rem'>Voice Input</div>
-                <div style='font-size:.82rem;color:#8b949e'>Speak your questions in Mental Health & Academic chat. No typing needed.</div>
-            </div>
-            <div style='flex:1;min-width:200px;background:rgba(86,207,178,.07);border:1px solid rgba(86,207,178,.2);border-radius:10px;padding:.9rem 1rem'>
-                <div style='font-size:1.3rem'>📄</div>
-                <div style='font-weight:600;margin:.3rem 0 .2rem'>PDF & Image Upload</div>
-                <div style='font-size:.82rem;color:#8b949e'>Upload lecture PDFs or photos of handwritten notes to summarize, quiz, or ask questions from.</div>
-            </div>
-            <div style='flex:1;min-width:200px;background:rgba(240,165,0,.07);border:1px solid rgba(240,165,0,.2);border-radius:10px;padding:.9rem 1rem'>
-                <div style='font-size:1.3rem'>🧠</div>
-                <div style='font-weight:600;margin:.3rem 0 .2rem'>AI from Your Notes</div>
-                <div style='font-size:.82rem;color:#8b949e'>Upload a file then quiz yourself, summarize, or ask the AI questions — all from your own material.</div>
+    with col2:
+        st.markdown("""
+        <div class='zen-card'>
+            <div class='section-head'>✨ What's New</div>
+            <div style='display:flex;gap:.7rem;flex-direction:column'>
+                <div style='background:rgba(96,165,250,.07);border:1px solid rgba(96,165,250,.2);border-radius:10px;padding:.8rem 1rem'>
+                    <div style='font-size:1.1rem'>💙</div>
+                    <div style='font-weight:600;margin:.2rem 0 .1rem;font-size:.9rem'>Crisis Support</div>
+                    <div style='font-size:.78rem;color:#8b949e'>Gentle support + breathing exercise when you need it most.</div>
+                </div>
+                <div style='background:rgba(86,207,178,.07);border:1px solid rgba(86,207,178,.2);border-radius:10px;padding:.8rem 1rem'>
+                    <div style='font-size:1.1rem'>📈</div>
+                    <div style='font-weight:600;margin:.2rem 0 .1rem;font-size:.9rem'>Mood Trends</div>
+                    <div style='font-size:.78rem;color:#8b949e'>Track how your week is going with a live mood chart.</div>
+                </div>
             </div>
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
     st.markdown("<div class='zen-card'><div class='section-head'>💡 Daily Wellness Tip</div>", unsafe_allow_html=True)
     tips = [
@@ -693,6 +1018,151 @@ if page == "Dashboard":
 # ══════════════════════════════════════════════════════════════
 elif page == "Mental Health":
 
+    calm_mode = st.session_state.chat_theme == "calm"
+
+    # ── Crisis popup (modal overlay) ─────────────────────────
+    if calm_mode and not st.session_state.get("sos_popup_dismissed", False):
+        import streamlit.components.v1 as components
+        
+        components.html("""
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { background: transparent; font-family: 'Inter', sans-serif; }
+            
+            .overlay {
+                position: fixed; inset: 0;
+                background: rgba(0,0,0,0.75);
+                backdrop-filter: blur(5px);
+                z-index: 999;
+            }
+            .modal {
+                position: fixed;
+                top: 50%; left: 50%;
+                transform: translate(-50%, -50%);
+                z-index: 1000;
+                width: min(460px, 90vw);
+                background: linear-gradient(160deg, #0d1e35 0%, #0d1117 100%);
+                border: 1px solid rgba(96,165,250,.4);
+                border-radius: 20px;
+                padding: 2rem;
+                box-shadow: 0 24px 80px rgba(0,0,0,.8);
+                animation: popIn .35s cubic-bezier(.22,1,.36,1);
+            }
+            @keyframes popIn {
+                from { opacity:0; transform: translate(-50%,-46%) scale(.95); }
+                to   { opacity:1; transform: translate(-50%,-50%) scale(1); }
+            }
+            
+            .icon { font-size: 2rem; margin-bottom: .6rem; }
+            .title {
+                font-size: 1.2rem; font-weight: 700;
+                color: #c9dff7; margin-bottom: .5rem;
+            }
+            .body-text {
+                font-size: .88rem; color: #94b8d8;
+                line-height: 1.7; margin-bottom: 1.1rem;
+            }
+            
+            .breath-box {
+                display: flex; align-items: center; gap: .9rem;
+                background: rgba(96,165,250,.06);
+                border: 1px solid rgba(96,165,250,.15);
+                border-radius: 10px; padding: .7rem 1rem;
+                margin-bottom: 1rem;
+            }
+            .breath-dot {
+                width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+                background: radial-gradient(circle, rgba(96,165,250,.6) 0%, rgba(96,165,250,.05) 80%);
+                border: 2px solid rgba(96,165,250,.5);
+                animation: breathe 8s ease-in-out infinite;
+            }
+            @keyframes breathe {
+                0%,100% { transform: scale(1);   opacity: .6; }
+                40%      { transform: scale(1.55); opacity: 1; }
+                60%      { transform: scale(1.55); opacity: 1; }
+            }
+            .breath-text { font-size: .8rem; color: #93c5fd; line-height: 1.5; }
+            .breath-text b { color: #c9dff7; display: block; margin-bottom: .1rem; }
+            
+            .divider {
+                border: none; border-top: 1px solid rgba(96,165,250,.12);
+                margin: .9rem 0;
+            }
+            .section-label {
+                font-size: .68rem; font-weight: 700; color: #60a5fa;
+                text-transform: uppercase; letter-spacing: .08em;
+                margin-bottom: .5rem;
+            }
+            .helpline {
+                background: rgba(96,165,250,.07);
+                border: 1px solid rgba(96,165,250,.15);
+                border-radius: 8px; padding: .45rem .8rem;
+                font-size: .8rem; color: #c9dff7;
+                margin-bottom: .3rem;
+                display: flex; justify-content: space-between; align-items: center;
+            }
+            .helpline b { color: #93c5fd; }
+            
+            .footer-text {
+                font-size: .78rem; color: #60a5fa;
+                text-align: center; margin-top: .8rem;
+                font-weight: 500;
+            }
+        </style>
+        </head>
+        <body>
+            <div class="overlay" onclick="closeModal()"></div>
+            <div class="modal" id="modal">
+                <div class="icon">💙</div>
+                <div class="title">Hey — I'm right here with you.</div>
+                <div class="body-text">
+                    What you're feeling is real, and it matters.<br>
+                    You don't have to carry this alone — and you don't have to
+                    figure everything out right now.<br><br>
+                    Take one slow breath. I'm not going anywhere.
+                </div>
+                
+                <div class="breath-box">
+                    <div class="breath-dot"></div>
+                    <div class="breath-text">
+                        <b>Try this with me</b>
+                        Breathe in 4s · Hold 4s · Out 4s. Repeat twice.
+                    </div>
+                </div>
+                
+                <hr class="divider">
+                
+                <div class="section-label">🆘 Talk to someone right now</div>
+                <div class="helpline"><span>🇧🇩 Kaan Pete Roi</span><b>01779-554391</b></div>
+                <div class="helpline"><span>🌍 Crisis Text Line</span><b>Text HOME → 741741</b></div>
+                <div class="helpline"><span>🌐 International</span><b>findahelpline.com</b></div>
+                
+                <div class="footer-text">↓ Close this and keep talking — I'm listening</div>
+            </div>
+            
+            <script>
+                function closeModal() {
+                    document.getElementById('modal').style.display = 'none';
+                    document.querySelector('.overlay').style.display = 'none';
+                }
+            </script>
+        </body>
+        </html>
+        """, height=520, scrolling=False)
+
+        dcol1, dcol2, dcol3 = st.columns([1, 2, 1])
+        with dcol2:
+            if st.button("Continue the conversation 💙", key="dismiss_sos", use_container_width=True):
+                st.session_state.sos_popup_dismissed = True
+                st.rerun()
+        st.stop()
+    # ── Normal hero ───────────────────────────────────────────
+    if not calm_mode:
+        st.session_state.sos_popup_dismissed = False  # reset for next time
+
     st.markdown("""
     <div class='hero'>
         <div class='pill'>💚 Safe Space</div>
@@ -701,25 +1171,17 @@ elif page == "Mental Health":
     </div>
     """, unsafe_allow_html=True)
 
-    MENTAL_SYSTEM = """
-You are CampusZen's compassionate mental health companion for university students.
-Your role:
-- Listen empathetically and validate feelings first before giving advice
-- Help with stress, anxiety, academic pressure, loneliness, burnout, relationships
-- Use warm, non-clinical language appropriate for a college student
-- Offer practical coping strategies when appropriate
-- Never diagnose
-- Never be dismissive
-- Always be kind
-"""
+    # ── Full-width chat (no side panel) ──────────────────────
+    bubble_user = "bubble-user-calm" if calm_mode else "bubble-user"
+    bubble_ai   = "bubble-ai-calm"   if calm_mode else "bubble-ai"
+    label_ai    = "💙 CampusZen" if calm_mode else "🌿 CampusZen"
 
-    # ── Chat history display ──────────────────────────────────
     st.markdown("<div class='chat-scroll'>", unsafe_allow_html=True)
 
     if not st.session_state.mental_msgs:
-        st.markdown("""
-        <div class='bubble-ai'>
-            <div class='bubble-label'>🌿 CampusZen Counselor</div>
+        st.markdown(f"""
+        <div class='{bubble_ai}'>
+            <div class='bubble-label'>{label_ai}</div>
             Hey, I'm here for you. Whether you're stressed about exams,
             feeling overwhelmed, or just need someone to talk to —
             this is a safe space. What's on your mind today? 💚
@@ -729,47 +1191,38 @@ Your role:
     for msg in st.session_state.mental_msgs:
         if msg["role"] == "user":
             st.markdown(
-                f"<div class='bubble-user'><div class='bubble-label'>You</div>{msg['content']}</div>",
+                f"<div class='{bubble_user}'><div class='bubble-label'>You</div>{msg['content']}</div>",
                 unsafe_allow_html=True
             )
         else:
             st.markdown(
-                f"<div class='bubble-ai'><div class='bubble-label'>🌿 CampusZen</div>{msg['content']}</div>",
+                f"<div class='{bubble_ai}'><div class='bubble-label'>{label_ai}</div>{msg['content']}</div>",
                 unsafe_allow_html=True
             )
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # ── Input bar ────────────────────────────────────────────
-    # KEY FIX: We use a dynamic key (counter-based) so bumping the counter
-    # remounts the widget fresh and empty after each send.
+    # ── Input bar ─────────────────────────────────────────────
     input_key = f"mental_text_{st.session_state.mental_input_counter}"
-
     col1, col2, col3 = st.columns([8.5, 0.75, 0.75])
 
     with col1:
         typed_text = st.text_input(
             "",
-            placeholder="Share what's on your mind...",
+            placeholder="Share what's on your mind..." if not calm_mode else "I'm here. Take your time...",
             key=input_key,
         )
-
     with col2:
-        # mic_recorder must be called every render so Streamlit keeps it alive.
         st.markdown("<br>", unsafe_allow_html=True)
         voice_audio = mic_recorder(
             start_prompt="🎤",
             stop_prompt="⏹",
             key="mental_mic",
         )
-
     with col3:
         st.markdown("<br>", unsafe_allow_html=True)
         send_clicked = st.button("➤", key="mental_send")
 
-    # ── Voice path ───────────────────────────────────────────
-    # KEY FIX: process voice immediately (transcribe + send) instead of
-    # just storing transcript and waiting for a button click.
     if voice_audio:
         clip_id = hash(bytes(voice_audio["bytes"]))
         if clip_id != st.session_state.mental_voice_id:
@@ -777,21 +1230,21 @@ Your role:
             with st.spinner("Transcribing..."):
                 transcript = transcribe_audio(voice_audio)
             if transcript and transcript.strip():
-                _mental_send(transcript.strip(), MENTAL_SYSTEM)
+                _mental_send(transcript.strip())
                 st.rerun()
 
-    # ── Button / keyboard send path ──────────────────────────
     if send_clicked and typed_text.strip():
-        _mental_send(typed_text.strip(), MENTAL_SYSTEM)
-        # Bump counter → new widget key → box renders empty next run
+        _mental_send(typed_text.strip())
         st.session_state.mental_input_counter += 1
         st.rerun()
 
-    # ── Clear chat ───────────────────────────────────────────
     if st.button("🗑️ Clear Chat", key="clear_mental"):
         st.session_state.mental_msgs = []
         st.session_state.mental_voice_id = None
         st.session_state.mental_input_counter += 1
+        st.session_state.crisis_detected = False
+        st.session_state.chat_theme = "normal"
+        st.session_state.sos_popup_dismissed = False
         st.rerun()
 
     st.markdown("""
@@ -802,13 +1255,12 @@ Your role:
     font-size:.8rem;
     color:#8b949e'>
     ⚠️ CampusZen is an AI companion, not a licensed therapist.
-    If you're in crisis, please contact a professional.
+    If you're in crisis, please contact a professional or a helpline above.
     </div>
     """, unsafe_allow_html=True)
 
-
 # ══════════════════════════════════════════════════════════════
-# PAGE: ACADEMIC HELP
+# PAGE: ACADEMIC HELP  (unchanged)
 # ══════════════════════════════════════════════════════════════
 elif page == "Academic Help":
     st.markdown("""
@@ -844,13 +1296,11 @@ elif page == "Academic Help":
     else:
         ACADEMIC_SYSTEM = ACADEMIC_SYSTEM_BASE
 
-    # ── Session state for academic input ─────────────────────
     if "academic_input_counter" not in st.session_state:
         st.session_state.academic_input_counter = 0
     if "academic_voice_id" not in st.session_state:
         st.session_state.academic_voice_id = None
 
-    # ── Shared send helper ────────────────────────────────────
     def _academic_send(user_message: str, system_prompt: str):
         st.session_state.academic_msgs.append({"role": "user", "content": user_message})
         history_str = "\n".join(
@@ -860,7 +1310,6 @@ elif page == "Academic Help":
             reply = ai(system_prompt, history_str)
         st.session_state.academic_msgs.append({"role": "assistant", "content": reply})
 
-    # ── PDF context banner ────────────────────────────────────
     if st.session_state.pdf_active:
         loaded_names = ", ".join(st.session_state.pdf_active)
         st.markdown(f"""
@@ -872,7 +1321,6 @@ elif page == "Academic Help":
         </div>
         """, unsafe_allow_html=True)
 
-    # ── Chat history display ──────────────────────────────────
     st.markdown("<div class='chat-scroll'>", unsafe_allow_html=True)
 
     if not st.session_state.academic_msgs:
@@ -901,9 +1349,7 @@ elif page == "Academic Help":
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # ── Input bar (same design as Mental Health) ──────────────
     academic_input_key = f"academic_text_{st.session_state.academic_input_counter}"
-
     col1, col2, col3 = st.columns([8.5, 0.75, 0.75])
 
     with col1:
@@ -912,7 +1358,6 @@ elif page == "Academic Help":
             placeholder="Ask your academic question...",
             key=academic_input_key,
         )
-
     with col2:
         st.markdown("<br>", unsafe_allow_html=True)
         academic_voice = mic_recorder(
@@ -920,12 +1365,10 @@ elif page == "Academic Help":
             stop_prompt="⏹",
             key="academic_mic",
         )
-
     with col3:
         st.markdown("<br>", unsafe_allow_html=True)
         academic_send = st.button("➤", key="academic_send")
 
-    # ── Voice path ────────────────────────────────────────────
     if academic_voice:
         clip_id = hash(bytes(academic_voice["bytes"]))
         if clip_id != st.session_state.academic_voice_id:
@@ -936,21 +1379,20 @@ elif page == "Academic Help":
                 _academic_send(transcript.strip(), ACADEMIC_SYSTEM)
                 st.rerun()
 
-    # ── Button send path ──────────────────────────────────────
     if academic_send and academic_typed.strip():
         _academic_send(academic_typed.strip(), ACADEMIC_SYSTEM)
         st.session_state.academic_input_counter += 1
         st.rerun()
 
-    # ── Clear chat ────────────────────────────────────────────
     if st.button("🗑️ Clear Chat", key="clear_academic"):
         st.session_state.academic_msgs = []
         st.session_state.academic_voice_id = None
         st.session_state.academic_input_counter += 1
         st.rerun()
 
+
 # ══════════════════════════════════════════════════════════════
-# PAGE: QUIZ GENERATOR
+# PAGE: QUIZ GENERATOR  (unchanged)
 # ══════════════════════════════════════════════════════════════
 elif page == "Quiz Generator":
     st.markdown("""
@@ -1078,7 +1520,7 @@ Return ONLY valid JSON in this exact format, no extra text:
 
 
 # ══════════════════════════════════════════════════════════════
-# PAGE: STUDY PLANNER
+# PAGE: STUDY PLANNER  (unchanged)
 # ══════════════════════════════════════════════════════════════
 elif page == "Study Planner":
     st.markdown("""
@@ -1165,7 +1607,7 @@ Be specific and realistic based on hours available and dont be blind about the d
 
 
 # ══════════════════════════════════════════════════════════════
-# PAGE: NOTE SUMMARIZER
+# PAGE: NOTE SUMMARIZER  (unchanged)
 # ══════════════════════════════════════════════════════════════
 elif page == "Note Summarizer":
     st.markdown("""
@@ -1277,4 +1719,3 @@ if st.session_state.summary_result:
     if st.button("🗑️ Clear"):
         st.session_state.summary_result = ""
         st.rerun()
-    
