@@ -3,3 +3,4 @@ groq>=0.9.0
 google-genai>=1.0.0
 PyMuPDF
 streamlit-mic-recorder
+plotly
